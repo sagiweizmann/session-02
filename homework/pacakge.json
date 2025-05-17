@@ -1,0 +1,16 @@
+{
+    "name": "multithreading-homework",
+    "version": "1.0.0",
+    "description": "homework for multithreading",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "watch": "tsc --watch"
+    },
+    "author": "Sagi weizmann",
+    "license": "ISC",
+    "devDependencies": {
+        "typescript": "^4.0.0"
+    }
+}
