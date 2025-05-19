@@ -1,39 +1,63 @@
-import fs from 'fs/promises';
+import fs from 'fs';
+import readline from 'readline';
 import os from 'os';
 import path from 'path';
 import { MyThreadPool } from './MyThreadPool';
 
+
 async function main() {
   const inputFile = 'input.txt';
-  const data = await fs.readFile(inputFile, 'utf-8');
-  const numbers = data.split(/\r?\n/).filter(Boolean).map(Number);
+  try {
+    console.log(`Reading numbers from "${inputFile}"…`);
+    const numbers = await readNumbers(inputFile);
 
-  // Initialize thread pool with the number of CPU cores [all we have]
-  const cores = os.cpus().length;
-  const workerScript = path.resolve(__dirname, 'primeWorker.js');
-  const pool = new MyThreadPool<number[], number>(cores, workerScript);
+    const cores = os.cpus().length;
+    console.log(`Dispatching ${numbers.length} numbers across ${cores} threads…`);
 
-  // Split input into chunks to keep all threads busy
-  const chunkSize = Math.ceil(numbers.length / cores);
-  const chunks: number[][] = [];
-  for (let i = 0; i < numbers.length; i += chunkSize) {
-    chunks.push(numbers.slice(i, i + chunkSize));
+    // point to the compiled worker script in dist/
+    const workerScript = path.resolve(__dirname, 'primeWorker.js');
+    const pool = new MyThreadPool<number[], number>(cores, workerScript);
+
+    // split into roughly equal chunks
+    const chunkSize = Math.ceil(numbers.length / cores);
+    const chunks: number[][] = [];
+    for (let i = 0; i < numbers.length; i += chunkSize) {
+      chunks.push(numbers.slice(i, i + chunkSize));
+    }
+
+    const start = process.hrtime.bigint();
+    // each chunk returns a count of primes
+    const counts = await Promise.all(chunks.map(chunk => pool.exec(chunk)));
+    const totalPrimes = counts.reduce((sum, c) => sum + c, 0);
+    const durationSec = Number(process.hrtime.bigint() - start) / 1e9;
+
+    console.log(`Found ${totalPrimes} primes in ${durationSec.toFixed(3)}s`);
+
+    await pool.close();
+  } catch (err: any) {
+    console.error(`Error: ${err.message || err}`);
+    process.exit(1);
+  }
+}
+
+async function readNumbers(filePath: string): Promise<number[]> {
+  const numbers: number[] = [];
+  const rl = readline.createInterface({
+    input: fs.createReadStream(filePath),
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      const num = Number(trimmed);
+      if (!Number.isNaN(num)) {
+        numbers.push(num);
+      }
+    }
   }
 
-  console.log(`Counting primes in ${numbers.length} numbers across ${cores} threads...`);
-
-  const start = process.hrtime.bigint();
-  
-  const counts = await Promise.all(chunks.map(chunk => pool.exec(chunk)));
-  const total = counts.reduce((sum, c) => sum + c, 0);
-
-  const end = process.hrtime.bigint();
-  const seconds = Number(end - start) / 1000000000;
-
-  console.log(`Found ${total} primes in ${seconds}s`);
-
-  // Close the pool safely
-  await pool.close();
+  return numbers;
 }
 
 main();
